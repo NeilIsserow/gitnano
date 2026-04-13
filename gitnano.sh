@@ -4,8 +4,8 @@
 # =================================================================
 
 # --- 1. CONFIGURATION (Edit as needed) ---
-OLD_GITLAB_URL="${1:-http://gitlab.c.tampuppettestenv.internal/puppet/control-repo.git}"
-NEW_FQDN="${2:-neilgitcore0.c.tampuppettestenv.internal}"
+OLD_GITLAB_URL="${1:-http://old-or-primary-gitlab/puppet/control-repo.git}"
+NEW_FQDN="${2:-your-offline-gitnano-fqdn}"
 TOKEN="${3:-your-secure-puppet-token}"
 
 GITNANO_USER="gitnano"
