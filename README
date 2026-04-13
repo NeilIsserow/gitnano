@@ -1,1 +1,96 @@
-README
+This **README** is designed to provide a high-level overview and clear operational guide for your new **GitNano** environment. Since it’s a single-node setup where GitNano and the Puppet Master live together, the focus is on how they talk to each other and how you can interact with the API.
+
+---
+
+# 🚀 GitNano: Unified Control-Repo Manager
+
+GitNano is a lightweight, high-performance bridge between your Puppet Master and your Git repositories. It replaces heavy Git solutions with a Python-based API and strict SSH loopback security, designed specifically for **Single-Node Puppet Architectures**.
+
+---
+
+## 🏗️ Architecture Overview
+
+GitNano operates three distinct layers on your server:
+
+1.  **The Core (Bare Repo):** Located at `/opt/gitnano/repos/control-repo.git`. This is the "Source of Truth."
+2.  **The API (Flask/Gunicorn):** Listens on port **5000**. It handles authenticated HTTP traffic for internal moves.
+3.  **The Handshake (SSH):** Uses the `pe-puppet` service user to talk to the `gitnano` user over the local interface for `r10k` deployments.
+
+---
+
+## 🛠️ Step-by-Step Instructions
+
+### 1. Initialization
+The installation script prepares the system users (`gitnano`), creates the Python virtual environment, and migrates your data from the old GitLab instance.
+* **Action:** Ensure the `gitnano.service` is active: `systemctl status gitnano`.
+
+### 2. Authentication
+All API requests require a **Bearer Token**.
+* This token is defined during installation.
+* It must be passed in the `Authorization` header for all HTTP requests.
+
+### 3. Puppet Integration (r10k)
+To sync your code to the Puppet Master, `r10k` uses the SSH private key stored in `/etc/puppetlabs/puppetserver/ssh/`. 
+* The connection string for `r10k.yaml` is: `gitnano@<YOUR_FQDN>:/opt/gitnano/repos/control-repo.git`.
+
+---
+
+## 🌐 API Endpoints
+
+The GitNano API mirrors the Git "Smart HTTP" protocol.
+
+### `GET /<repo_name>/info/refs?service=git-receive-pack`
+**Purpose:** Advertises the repository capabilities and current refs to a client.
+* **Header Required:** `Authorization: Bearer <YOUR_TOKEN>`
+* **Usage:** Used internally by Git during the initial phase of a `push` or `pull`.
+
+### `POST /<repo_name>/git-receive-pack`
+**Purpose:** Receives data pushed from a client into the GitNano repository.
+* **Header Required:** `Authorization: Bearer <YOUR_TOKEN>`
+* **Usage:** This is the endpoint hit when you perform a `git push` from the live directory to the API.
+
+---
+
+## 💻 Usage Examples
+
+### Pushing Changes via the API
+If you are working in the live directory (`/var/www/production`) and want to push changes to the master repo without using SSH:
+
+```bash
+# Example Curl check
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:5000/control-repo.git/info/refs?service=git-receive-pack
+
+# Example Git Push
+git push gitnano production
+```
+
+### Manual SSH Handshake Test
+To verify the Puppet Master can still talk to the Git backend:
+
+```bash
+sudo -u pe-puppet ssh -i /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa gitnano@localhost "git --version"
+```
+
+---
+
+## 📁 Key File Paths
+
+| Component | Path |
+| :--- | :--- |
+| **Bare Repository** | `/opt/gitnano/repos/control-repo.git` |
+| **Production Worktree** | `/var/www/production` |
+| **Python API Source** | `/opt/gitnano/app/gitnano.py` |
+| **Puppet SSH Key** | `/etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa` |
+| **Systemd Service** | `/etc/systemd/system/gitnano.service` |
+
+---
+
+## 🛡️ Troubleshooting
+
+* **Permission Denied (SSH):** Ensure `/opt/gitnano` is owned by `gitnano` and `/opt` is owned by `root`. SSH will reject keys if the parent directory permissions are too open (e.g., 777).
+* **401 Unauthorized:** Double-check the token in your `Authorization` header.
+* **Hanging Connections:** Usually caused by DNS lookups. The installation script disables `UseDNS` in `sshd_config` to prevent this.
+
+---
+
+> **Note:** This system is optimized for performance. By using a local API and SSH loopback, we eliminate the overhead of external network calls and heavy web interfaces.README
