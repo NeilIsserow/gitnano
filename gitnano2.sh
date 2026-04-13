@@ -4,7 +4,7 @@
 # =================================================================
 
 # 1. PARAMETERS
-NEW_FQDN="${1:-neilgitcore0.c.tampuppettestenv.internal}"
+NEW_FQDN="${1:-your-offline-gitnano-fqdn}"
 GITNANO_USER="gitnano"
 INSTALL_DIR="/opt/gitnano"
 PUPPET_USER="pe-puppet" 
