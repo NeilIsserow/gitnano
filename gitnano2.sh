@@ -67,6 +67,3 @@ else
     echo "❌ ERROR: Connection established but Git command failed."
     echo "Result: $RESULT"
 fi
-echo examples!!! 
-echo You need to make sure that R10k_known hosts is correct in Puppet ie: [{"name":"neilgitcore0.c.tampuppettestenv.internal","type":"ssh-ed25519","key":"AAAAC3NzaC1lZDI1NTE5AAAAIP3s8JJWgswhr1iOFlnjkTdkBi28ZhZ6q0ddaYmjt2yt"}] 
-echo as well as  R10k_remote : "gitnano@neilgitcore0.c.tampuppettestenv.internal:/opt/gitnano/repos/control-repo.git"
