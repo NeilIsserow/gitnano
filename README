@@ -53,6 +53,18 @@ The GitNano API mirrors the Git "Smart HTTP" protocol.
 
 ## 💻 Usage Examples
 
+### Basic change full lifecycle test
+
+'''bash
+cd /var/www/production
+nano Puppetfile #make a sample change here!
+git add .
+git commit -m "Puppetfile test change"
+git push
+puppet code deploy production --wait
+cd /etc/puppetlabs/code-staging/environments/production
+cat Puppetfile #you should see your change
+
 ### Pushing Changes via the API
 If you are working in the live directory (`/var/www/production`) and want to push changes to the master repo without using SSH:
 
