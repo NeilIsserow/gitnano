@@ -1,0 +1,14 @@
+#add to your common.yaml or elsewhere as appropriate for hiera
+---
+# =================================================================
+# GitNano Bridge Configuration Data
+# =================================================================
+
+# The original legacy internal GitLab repository endpoint used for the data mirror seed
+profile::gitnano::old_gitlab_url: "http://gitlab.internal/puppet/control-repo.git"
+
+# The fully qualified domain name of your new primary deployment/compilation host
+profile::gitnano::new_fqdn: "newcore0.internal"
+
+# The unique authentication token used by the loopback API bridge for premium and standard modules
+profile::gitnano::api_token: "your-secure-puppet-token"
