@@ -1,8 +1,15 @@
-class profile::gitnano (
-  String $old_gitlab_url = 'http://gitlab.c.tampuppettestenv.internal/puppet/control-repo.git',
-  String $new_fqdn       = $facts['networking']['fqdn'],
-  String $api_token      = 'your-secure-puppet-token',
-) {
+# =================================================================
+# Class: profile::gitnano
+# Description: Deploys the GitNano Smart HTTP API and configures
+#              the secure loopback SSH handshake for Puppet Master.
+#              Bypasses environment class-signature validation bugs.
+# =================================================================
+class profile::gitnano {
+
+  # 0. Pure Hiera Data Bindings
+  $old_gitlab_url = lookup('profile::gitnano::old_gitlab_url')
+  $api_token      = lookup('profile::gitnano::api_token')
+  $new_fqdn       = lookup('profile::gitnano::new_fqdn')
 
   $gitnano_user    = 'gitnano'
   $install_dir     = '/opt/gitnano'
@@ -25,7 +32,6 @@ class profile::gitnano (
     managehome => false,
   }
 
-  # Force user account to stay unlocked
   exec { 'unlock_gitnano_user':
     command => "passwd -u ${gitnano_user}",
     path    => ['/usr/bin', '/usr/sbin', '/bin'],
@@ -122,7 +128,7 @@ if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)
     notify  => Service['gitnano'],
   }
 
-  # 6. Service Management
+  # 6. Service Management (Hardened state detection)
   file { '/etc/systemd/system/gitnano.service':
     ensure  => file,
     owner   => 'root',
@@ -132,12 +138,15 @@ if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)
 [Unit]
 Description=GitNano Smart HTTP API Bridge
 After=network.target
+
 [Service]
 User=${gitnano_user}
 Group=${gitnano_user}
 WorkingDirectory=${install_dir}/app
 ExecStart=${install_dir}/app/venv/bin/gunicorn --workers 1 --bind 0.0.0.0:5000 gitnano:app
 Restart=always
+RestartSec=3
+
 [Install]
 WantedBy=multi-user.target
 | EOF
@@ -150,10 +159,19 @@ WantedBy=multi-user.target
     refreshonly => true,
   }
 
+  # Hardened Overrides: Forces absolute systemd status compliance if manually stopped
   service { 'gitnano':
-    ensure    => running,
-    enable    => true,
-    subscribe => [File['/etc/systemd/system/gitnano.service'], Exec['gitnano-systemd-reload']],
+    ensure     => 'running',
+    enable     => true,
+    provider   => 'systemd',
+    hasstatus  => false,
+    hasrestart => true,
+    status     => 'systemctl is-active gitnano',
+    start      => 'systemctl start gitnano',
+    require    => [
+      File['/etc/systemd/system/gitnano.service'],
+      Exec['gitnano-systemd-reload']
+    ],
   }
 
   # 7. SSHD Anti-Hang Optimizations
@@ -184,7 +202,6 @@ WantedBy=multi-user.target
     creates => $private_key,
   }
 
-  # Synchronize public key data directly from private context
   exec { 'sync_authorized_keys':
     command => "ssh-keygen -y -f ${private_key} > ${install_dir}/.ssh/authorized_keys",
     path    => ['/usr/bin', '/bin'],
@@ -193,7 +210,6 @@ WantedBy=multi-user.target
     require => [Exec['generate_puppet_ssh_key'], File["${install_dir}/.ssh"]],
   }
 
-  # Enforce rigorous loopback permission parameters
   file { $puppet_ssh_dir:
     ensure  => directory,
     owner   => $puppet_user,
@@ -218,7 +234,6 @@ WantedBy=multi-user.target
     require => Exec['sync_authorized_keys'],
   }
 
-  # Self-seeding host fingerprint keys
   exec { 'seed_known_hosts':
     command => "ssh-keyscan -t rsa,ed25519 ${new_fqdn} localhost 127.0.0.1 >> /etc/ssh/ssh_known_hosts",
     path    => ['/usr/bin', '/bin'],
@@ -235,17 +250,15 @@ WantedBy=multi-user.target
     require => File["${install_dir}/repos"],
   }
 
-  # Initial migration trigger
   exec { 'migrate_gitlab_data':
-    command => "cd /tmp && MIGRATE_DIR=\$(mktemp -d) && chown ${gitnano_user} \$MIGRATE_DIR && sudo -u ${gitnano_user} git clone --mirror ${old_gitlab_url} \$MIGRATE_DIR && cd \$MIGRATE_DIR && sudo -u ${gitnano_user} git push --mirror ${install_dir}/repos/${repo_name} && cd /tmp && rm -rf \$MIGRATE_DIR",
-    path    => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
+    command     => "cd /tmp && MIGRATE_DIR=\$(mktemp -d) && chown ${gitnano_user} \$MIGRATE_DIR && sudo -u ${gitnano_user} git clone --mirror ${old_gitlab_url} \$MIGRATE_DIR && cd \$MIGRATE_DIR && sudo -u ${gitnano_user} git push --mirror ${install_dir}/repos/${repo_name} && cd /tmp && rm -rf \$MIGRATE_DIR",
+    path        => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
     refreshonly => true,
     subscribe   => Exec['initialize_bare_repo'],
   }
 
-  # Establish target live directory checkout configuration
   exec { 'initialize_production_worktree':
-    command => "cd /tmp && rm -rf ${live_dir} && mkdir -p ${live_dir} && chown ${gitnano_user}:${gitnano_user} ${live_dir} && sudo -u ${gitnano_user} git clone --branch production ${install_dir}/repos/${repo_name} ${live_dir} && cd ${live_dir} && sudo -u ${gitnano_user} git remote add gitnano http://:@localhost:5000/${repo_name} && sudo -u ${gitnano_user} git config http.extraHeader 'Authorization: Bearer ${api_token}'",
+    command     => "cd /tmp && rm -rf ${live_dir} && mkdir -p ${live_dir} && chown ${gitnano_user}:${gitnano_user} ${live_dir} && sudo -u ${gitnano_user} git clone --branch production ${install_dir}/repos/${repo_name} ${live_dir} && cd ${live_dir} && sudo -u ${gitnano_user} git remote add gitnano http://:@localhost:5000/${repo_name} && sudo -u ${gitnano_user} git config http.extraHeader 'Authorization: Bearer ${api_token}'",
     path        => ['/usr/bin', '/bin', '/usr/sbin', '/sbin'],
     refreshonly => true,
     subscribe   => Exec['migrate_gitlab_data'],
