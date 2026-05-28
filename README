@@ -1,53 +1,72 @@
-## WARNING — Use at your own risk
-**NB! This code is provided as-is, with no guarantee it will work or not do any damage. No warranty or support is provided and this is developed independently of my employer with the help of AI. Use of this repo is at your own risk!**
+## WARNING — Use at your own risk  
+**NB! This code is provided as‑is, with no guarantee it will work or not do any damage.  
+No warranty or support is provided and this is developed independently of my
+employer with the help of AI. Use of this repo is at your own risk!**
 
 ---
 
 # 🚀 GitNano: Unified Control-Repo Manager
 
-GitNano is a lightweight Python-based bridge between your Puppet Master and your Git repositories, designed for single-node Puppet architectures. It provides a small HTTP API and an SSH loopback for r10k deployments, replacing heavier Git hosting solutions.
+GitNano is a lightweight Python-based bridge between your Puppet Master and your
+Git repositories, designed for single-node Puppet architectures. It provides a
+small HTTP API and an SSH loopback for r10k deployments, replacing heavier
+Git hosting solutions.
+
+---
 
 ## 🏗️ Architecture Overview
+
 GitNano runs three layers on the same server:
+
 - **Core (Bare Repo)** — /opt/gitnano/repos/control-repo.git (the source of truth)  
-- **API (Flask / Gunicorn)** — listens on port **5000** for authenticated HTTP traffic  
-- **Handshake (SSH)** — pe-puppet speaks to gitnano over localhost for r10k deployments
+- **API (Flask / Gunicorn)** — listens on port **5000** for authenticated HTTP
+  traffic  
+- **Handshake (SSH)** — pe-puppet speaks to gitnano over localhost for r10k
+  deployments
+
+---
 
 ## 🛠️ Quick Operational Steps
 
 ### 1. Initialization
-- Installation script creates system user `gitnano`, a Python virtualenv, and migrates data from the old GitLab.
-- Action: verify service is running:
-  ```
-  systemctl status gitnano
-  ```
+The installation script creates the `gitnano` system user, a Python virtualenv,
+and migrates data from the previous GitLab instance.
+
+Action:
+```
+systemctl status gitnano
+```
 
 ### 2. Authentication
-- All API requests require a **Bearer Token** defined at installation.
-- Include in requests:
-  ```
-  Authorization: Bearer <YOUR_TOKEN>
-  ```
+All API requests require a **Bearer Token** defined at installation. Include it
+in requests:
+```
+Authorization: Bearer <YOUR_TOKEN>
+```
 
 ### 3. Puppet / r10k Integration
-- r10k uses the private key at:
-  ```
-  /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa
-  ```
-- r10k connection string:
-  ```
-  gitnano@<YOUR_FQDN>:/opt/gitnano/repos/control-repo.git
-  ```
+r10k uses the private key at:
+```
+/etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa
+```
+r10k connection string:
+```
+gitnano@<YOUR_FQDN>:/opt/gitnano/repos/control-repo.git
+```
+
+---
 
 ## 🌐 API Endpoints (Smart HTTP-compatible)
 
-- GET /<repo_name>/info/refs?service=git-receive-pack  
-  - Purpose: advertise capabilities and refs (used during initial push/pull)  
-  - Header: Authorization: Bearer <YOUR_TOKEN>
+- `GET /<repo_name>/info/refs?service=git-receive-pack`  
+  Purpose: advertise capabilities and refs (used during initial push/pull).  
+  Header: `Authorization: Bearer <YOUR_TOKEN>`
 
-- POST /<repo_name>/git-receive-pack  
-  - Purpose: receive pushed data into the repo (used on git push)  
-  - Header: Authorization: Bearer <YOUR_TOKEN>
+- `POST /<repo_name>/git-receive-pack`  
+  Purpose: receive pushed data into the repo (used on `git push`).  
+  Header: `Authorization: Bearer <YOUR_TOKEN>`
+
+---
 
 ## 💻 Usage Examples
 
@@ -73,28 +92,38 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 git push gitnano production
 ```
 
-Manual SSH handshake test (verify Puppet Master -> Git backend):
+Manual SSH handshake test (verify Puppet Master → Git backend):
 ```bash
 sudo -u pe-puppet ssh -i /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa \
   gitnano@localhost "git --version"
 ```
 
+---
+
 ## 📁 Key File Paths
 
-| Component | Path |
-| :--- | :--- |
-| **Bare Repository** | /opt/gitnano/repos/control-repo.git |
-| **Production Worktree** | /var/www/production |
-| **Python API Source** | /opt/gitnano/app/gitnano.py |
-| **Puppet SSH Key** | /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa |
-| **Systemd Service** | /etc/systemd/system/gitnano.service |
-
-## 🛡️ Troubleshooting
-
-- **Permission Denied (SSH):** Ensure /opt/gitnano is owned by user `gitnano` and /opt is owned by `root`. SSH rejects keys if parent directories are world-writable.
-- **401 Unauthorized:** Verify the token in the `Authorization` header.
-- **Hanging Connections:** Often due to DNS lookups; installer disables `UseDNS` in sshd_config to prevent this.
+| Component             | Path                                                        |
+| :-------------------  | :---------------------------------------------------------- |
+| **Bare Repository**    | /opt/gitnano/repos/control-repo.git                         |
+| **Production Worktree**| /var/www/production                                         |
+| **Python API Source**  | /opt/gitnano/app/gitnano.py                                 |
+| **Puppet SSH Key**     | /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa        |
+| **Systemd Service**    | /etc/systemd/system/gitnano.service                         |
 
 ---
 
-Note: this setup is optimized for single-node performance by using a local API + SSH loopback to avoid external network overhead.
+## 🛡️ Troubleshooting
+
+- **Permission Denied (SSH):** Ensure `/opt/gitnano` is owned by `gitnano` and
+  `/opt` is owned by `root`. SSH will reject keys if parent directories are
+  world-writable.
+
+- **401 Unauthorized:** Verify the token in the `Authorization` header.
+
+- **Hanging Connections:** Often caused by DNS lookups; the installer disables
+  `UseDNS` in `sshd_config` to prevent this.
+
+---
+
+This setup is optimized for single-node performance by using a local API plus an
+SSH loopback to avoid external network overhead.
