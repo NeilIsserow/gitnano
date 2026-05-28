@@ -131,13 +131,7 @@ sudo -u pe-puppet ssh -i /etc/puppetlabs/puppetserver/ssh/id-control_repo.rsa \
 This setup is optimized for single-node performance by using a local API plus an
 SSH loopback to avoid external network overhead.
 ---
-Here is a clean, professionally formatted **Markdown** version of the security audit. You can copy and paste this directly into your GitHub `README.md`.
 
-It includes clear hazard badges, code snippet references, and actionable remediation steps to make it easy for your team or future maintainers to review.
-
----
-
-```markdown
 # 🛡️ Security Audit & Risk Assessment
 
 This section outlines the current security architecture limitations and potential attack vectors found within the standalone GitNano deployment scripts (`gitnano.sh` and `gitnano2.sh`). 
@@ -159,66 +153,3 @@ Because this application is optimized for simplicity and speed in restricted or 
   service = request.args.get('service')
   # ...
   proc = subprocess.Popen(['git', service.replace('git-', ''), "--stateless-rpc", repo_path], ...)
-
-```
-
-* **The Risk:** The `service` variable is fed directly from user input. An attacker who obtains or bypasses the token could manipulate this parameter to inject malicious flags or arguments into the execution string, potentially resulting in arbitrary code execution under the privileges of the `gitnano` system user.
-* **Remediation:** Implement strict input allow-listing for the `service` parameter. The application should explicitly reject any input that isn't exactly `git-upload-pack` or `git-receive-pack`.
-
-### 3. Global Network Interface Exposure
-
-* **Vulnerability:** The systemd service configuration explicitly instructs Gunicorn to listen globally:
-```ini
-ExecStart=/opt/gitnano/app/venv/bin/gunicorn --bind 0.0.0.0:5000 gitnano:app
-
-```
-
-
-* **The Risk:** Binding to `0.0.0.0` exposes the custom API port to every physical and virtual network interface on the machine. If the host is multi-homed, connected to a public network, or sits on a shared corporate VLAN, the endpoint is completely exposed to external scanning.
-* **Remediation:** Change the binding flag to `--bind 127.0.0.1:5000`. Because your internal Git hooks and clone configurations use `localhost`, there is no operational requirement for the API to listen externally.
-
----
-
-## 🟡 Medium Risk: SSH & Privileged Handshakes
-
-### 1. Over-Privileged Shell Access (`id-control_repo.rsa`)
-
-* **Vulnerability:** The provisioning engine generates a 4096-bit RSA key for `pe-puppet` and appends it directly into `gitnano`'s standard authorized keys file.
-* **The Risk:** This key grants unrestricted interactive shell access (`/bin/bash`) to the `gitnano` user account. If an attacker compromises the Puppet Master filesystem or leaks this private key, they inherit full shell access to the GitNano host.
-* **Remediation:** Enforce SSH command restrictions inside the `/opt/gitnano/.ssh/authorized_keys` file. Prepend the key with explicit configuration constraints to isolate its capabilities exclusively to Git RPC mechanisms:
-```text
-no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,command="git-shell -c \"$SSH_ORIGINAL_COMMAND\"" ssh-rsa AAAAB3NzaC1...
-
-```
-
-
-
-### 2. Suppressed Host Key Verification
-
-* **Vulnerability:** The verification script explicitly forces SSH connection bypasses:
-```bash
-TEST_CMD="sudo -u \$PUPPET_USER ssh -o StrictHostKeyChecking=no ..."
-
-```
-
-
-* **The Risk:** Disabling strict host checking leaves the system vulnerable to Man-in-the-Middle (MitM) attacks if a rogue machine spoofs or poisons the target FQDN.
-* **Remediation:** Remove the runtime flag. Rely entirely on the pre-provisioned `ssh-keyscan` hook to seed `/etc/ssh/ssh_known_hosts` globally, and leave `StrictHostKeyChecking` enabled.
-
----
-
-## 🟢 Low Risk: System Layout
-
-### 1. Plaintext Secret Proliferation
-
-* **Vulnerability:** The application's `api_token` is written statically to disk in plaintext in two distinct locations:
-1. `/opt/gitnano/app/gitnano.py` (API authentication logic)
-2. `/var/www/production/.git/config` (Git `extraHeader` credential)
-
-
-* **The Risk:** Any unauthorized local system user with read permissions on these directories could harvest the token.
-* **Remediation:** While the deployment scripts mitigate this threat well by enforcing restrictive Unix permissions (`chmod 0600`), the architectural best practice is to inject secrets dynamically at runtime via environment variables or map them through a local system secret store.
-
-```
-
-```
