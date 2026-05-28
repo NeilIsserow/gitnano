@@ -5,9 +5,8 @@ employer with the help of AI. Use of this repo is at your own risk!**
 
 ---
 Use gitnano.sh if you are standing up a brand new host from scratch or need to trigger a full seed migration from your upstream source.
-
-Use gitnano2.sh if the application is already running, 
-but your Puppet agent runs are hanging or throwing an SSH connection error when trying to fetch data from the local repository.
+Use gitnano2.sh if the application is already running, but your Puppet agent runs are hanging or throwing an SSH connection error when trying to fetch data from the local repository.
+Use gitnano.pp with common.yaml in your PE setup once gitnano is up and running to ensure it stays up and running on every Puppet Agent run.
 ---
 # 🚀 GitNano: Unified Control-Repo Manager
 
