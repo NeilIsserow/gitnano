@@ -1,4 +1,6 @@
-This **README** is designed to provide a high-level overview and clear operational guide for your new **GitNano** environment. Since it’s a single-node setup where GitNano and the Puppet Master live together, the focus is on how they talk to each other and how you can interact with the API.
+**NB! This code is provided as-is, with no guarantee it will work or not do any damage. No warranty or support is provided and this is developed independently of my employer with the help of AI. Use of this repo is at your own risk!**
+---
+This **README** is designed to provide a high-level overview and clear operational guide for **GitNano** environment. Since it’s a single-node setup where GitNano and the Puppet Master live together, the focus is on how they talk to each other and how you can interact with the API.
 
 ---
 
