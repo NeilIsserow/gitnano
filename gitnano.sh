@@ -4,9 +4,10 @@
 # =================================================================
 
 # --- 1. CONFIGURATION (Edit as needed) ---
-OLD_GITLAB_URL="${1:-http://old-or-primary-gitlab/puppet/control-repo.git}"
+OLD_GITLAB_URL="${1:-none}"
 NEW_FQDN="${2:-your-offline-gitnano-fqdn}"
 TOKEN="${3:-your-secure-puppet-token}"
+SEED_SOURCE="${4:-}"
 
 GITNANO_USER="gitnano"
 INSTALL_DIR="/opt/gitnano"
@@ -23,7 +24,7 @@ echo "🚀 Starting Unified GitNano Deployment for $NEW_FQDN..."
 
 # --- 2. SYSTEM PREP & USERS ---
 apt-get update -q -y
-apt-get install -y python3 python3-venv git curl openssh-server net-tools
+apt-get install -y python3 python3-venv git curl openssh-server net-tools sudo nano
 
 if ! id -u $GITNANO_USER &>/dev/null; then
     useradd -r -m -d $INSTALL_DIR -s /bin/bash $GITNANO_USER
@@ -101,22 +102,89 @@ echo "🔧 Optimizing SSH Daemon..."
 sed -i 's/^#UseDNS yes/UseDNS no/' /etc/ssh/sshd_config
 sed -i 's/^UseDNS yes/UseDNS no/' /etc/ssh/sshd_config
 sed -i 's/^GSSAPIAuthentication yes/GSSAPIAuthentication no/' /etc/ssh/sshd_config
-systemctl restart ssh
+rm -f /run/nologin /etc/nologin
+systemctl restart ssh 2>/dev/null || service ssh restart 2>/dev/null || true
 
 # --- 7. DATA MIGRATION ---
-echo "🚚 Migrating data from $OLD_GITLAB_URL..."
+echo "🚚 Setting up control-repo..."
 rm -rf "$INSTALL_DIR/repos/$REPO_NAME"
 sudo -u $GITNANO_USER git init --bare "$INSTALL_DIR/repos/$REPO_NAME"
 sudo -u $GITNANO_USER git -C "$INSTALL_DIR/repos/$REPO_NAME" symbolic-ref HEAD refs/heads/production
 
-MIGRATE_DIR=$(mktemp -d)
-chown $GITNANO_USER "$MIGRATE_DIR"
-sudo -u $GITNANO_USER git clone --mirror "$OLD_GITLAB_URL" "$MIGRATE_DIR"
-if [ $? -eq 0 ]; then
-    cd "$MIGRATE_DIR"
-    sudo -u $GITNANO_USER git push --mirror "$INSTALL_DIR/repos/$REPO_NAME"
+if [ -n "$SEED_SOURCE" ] && [ -d "$SEED_SOURCE" ]; then
+    # Seed from a provided local control-repo directory.
+    echo "🌱 Seeding control-repo from $SEED_SOURCE"
+    # /root is 700 (not traversable by the gitnano user), so stage the seed under
+    # gitnano's own dir where the gitnano user can reach it.
+    SEED_STAGE="$INSTALL_DIR/seed"
+    rm -rf "$SEED_STAGE"
+    mkdir -p "$INSTALL_DIR"
+    cp -a "$SEED_SOURCE" "$SEED_STAGE"
+    chown -R $GITNANO_USER:$GITNANO_USER "$SEED_STAGE"
+    cd "$SEED_STAGE"
+    if [ ! -d "$SEED_STAGE/.git" ]; then
+        sudo -u $GITNANO_USER git init -q
+    fi
+    sudo -u $GITNANO_USER git checkout -B production 2>/dev/null || sudo -u $GITNANO_USER git checkout production 2>/dev/null || true
+    # The seed may be a shallow clone (--depth 1) from the wizard; a shallow
+    # push is rejected by the remote, so unshallow it first.
+    sudo -u $GITNANO_USER git fetch --unshallow 2>/dev/null || true
+    sudo -u $GITNANO_USER git add -A
+    sudo -u $GITNANO_USER git -c user.email="gitnano@$NEW_FQDN" -c user.name="GitNano Automator" commit -q -m "Seed control-repo" 2>/dev/null || true
+    if sudo -u $GITNANO_USER git push -q --force "$INSTALL_DIR/repos/$REPO_NAME" production; then
+        echo "✅ Control-repo seeded from $SEED_SOURCE"
+    else
+        echo "⚠  Seed push failed – falling back to minimal control-repo"
+        SEED_DIR=$(mktemp -d)
+        chown $GITNANO_USER "$SEED_DIR"
+        sudo -u $GITNANO_USER git -C "$SEED_DIR" init -q
+        sudo -u $GITNANO_USER git -C "$SEED_DIR" checkout -q -b production
+        mkdir -p "$SEED_DIR/manifests" "$SEED_DIR/hieradata" "$SEED_DIR/modules"
+        cat > "$SEED_DIR/Puppetfile" <<'PUPPETFILE'
+forge "https://forge.puppet.com"
+PUPPETFILE
+        cat > "$SEED_DIR/manifests/site.pp" <<'SITEPP'
+# Default node classification
+node default {
+  notify { 'gitnano control-repo ready': }
+}
+SITEPP
+        sudo -u $GITNANO_USER git -C "$SEED_DIR" add -A
+        sudo -u $GITNANO_USER git -C "$SEED_DIR" -c user.email="gitnano@$NEW_FQDN" -c user.name="GitNano Automator" commit -q -m "Initial control-repo"
+        sudo -u $GITNANO_USER git -C "$SEED_DIR" push -q "$INSTALL_DIR/repos/$REPO_NAME" production
+        rm -rf "$SEED_DIR"
+    fi
+    rm -rf "$SEED_STAGE"
+elif [ "$OLD_GITLAB_URL" = "none" ]; then
+    # Fresh install: seed a minimal control-repo so r10k has something to deploy.
+    SEED_DIR=$(mktemp -d)
+    chown $GITNANO_USER "$SEED_DIR"
+    sudo -u $GITNANO_USER git -C "$SEED_DIR" init -q
+    sudo -u $GITNANO_USER git -C "$SEED_DIR" checkout -q -b production
+    mkdir -p "$SEED_DIR/manifests" "$SEED_DIR/hieradata" "$SEED_DIR/modules"
+    cat > "$SEED_DIR/Puppetfile" <<'PUPPETFILE'
+forge "https://forge.puppet.com"
+PUPPETFILE
+    cat > "$SEED_DIR/manifests/site.pp" <<'SITEPP'
+# Default node classification
+node default {
+  notify { 'gitnano control-repo ready': }
+}
+SITEPP
+    sudo -u $GITNANO_USER git -C "$SEED_DIR" add -A
+    sudo -u $GITNANO_USER git -C "$SEED_DIR" -c user.email="gitnano@$NEW_FQDN" -c user.name="GitNano Automator" commit -q -m "Initial control-repo"
+    sudo -u $GITNANO_USER git -C "$SEED_DIR" push -q "$INSTALL_DIR/repos/$REPO_NAME" production
+    rm -rf "$SEED_DIR"
+else
+    MIGRATE_DIR=$(mktemp -d)
+    chown $GITNANO_USER "$MIGRATE_DIR"
+    sudo -u $GITNANO_USER git clone --mirror "$OLD_GITLAB_URL" "$MIGRATE_DIR"
+    if [ $? -eq 0 ]; then
+        cd "$MIGRATE_DIR"
+        sudo -u $GITNANO_USER git push --mirror "$INSTALL_DIR/repos/$REPO_NAME"
+    fi
+    rm -rf "$MIGRATE_DIR"
 fi
-rm -rf "$MIGRATE_DIR"
 
 # --- 8. SETUP LIVE DIRECTORY & TOKEN AUTH ---
 echo "📂 Setting up production working copy..."
